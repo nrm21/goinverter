@@ -62,17 +62,29 @@ func handleHttpRaw(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if strings.Contains(r.URL.Path, "query") {
-		web2usbPipe <- "QPIGS"
-		fmt.Fprintf(w, "%s\n", PrettyString(<-web2usbPipe))
+		qr := &QueryResponse{}
 
-		web2usbPipe <- "QPIRI"
-		fmt.Fprintf(w, "%s\n", PrettyString(<-web2usbPipe))
+		cmd := "QPIGS"
+		web2usbPipe <- cmd
+		response := <-web2usbPipe
+		responseParser(cmd, &response, qr)
+
+		cmd = "QPIRI"
+		web2usbPipe <- cmd
+		response = <-web2usbPipe
+		responseParser(cmd, &response, qr)
+
+		// turn response into JSON and stringify it
+		jsonStruct, _ := json.Marshal(qr)
+		response = string(jsonStruct)
+
+		// now indent the json into pretty print for webpage display
+		fmt.Fprintf(w, "%s\n", PrettyString(response))
 	} else if strings.Contains(r.URL.Path, "raw") {
+		// run command and send response to web
 		query := r.URL.Query()
 		web2usbPipe <- query.Get("cmd")
-
-		// get parsed json struct back so we can send to web as response
-		fmt.Fprintf(w, "%s\n", PrettyString(<-web2usbPipe))
+		fmt.Fprintf(w, "%s\n", <-web2usbPipe) // and send response to console also
 	}
 }
 
@@ -96,21 +108,11 @@ func handleUSBTraffic() {
 					time.Sleep(2500 * time.Millisecond)
 				}
 			}
-			qr := &QueryResponse{}
-			responseParser(&cmd, &response, qr)
-
-			jsonStruct, err := json.Marshal(qr)
-			if err != nil {
-				fmt.Println("There was a problem creating the JSON")
-			}
-
-			response = string(jsonStruct)
 		} else { // else this isn't a query that returns a long response
 			response, _ = writeToInverter(&inverterDev, &cmd)
-			response = fmt.Sprintf("{\"msg\": \"%s\"}", response) // JSON-ify
+			//response = fmt.Sprintf("{\"msg\": \"%s\"}", response) // JSON-ify
 		}
 
-		//fmt.Println(string(jsonStruct))  // troubleshooting
 		web2usbPipe <- response
 	}
 }

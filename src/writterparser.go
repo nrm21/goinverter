@@ -185,8 +185,8 @@ func writeToInverter(dev *hid.DeviceInfo, cmdToWrite *string) (string, int) {
 }
 
 // Take the response string and seperated them into fields
-func responseParser(cmd *string, response *string, qr *QueryResponse) {
-	if *cmd == "QPIGS" {
+func responseParser(cmd string, response *string, qr *QueryResponse) {
+	if cmd == "QPIGS" {
 		_, err := fmt.Sscanf(*response, "%f %f %f %f %d %d %d %d %f %d %d %d %d %f %f %d %s",
 			&qr.Grid_voltage, &qr.Grid_freq, &qr.Out_voltage, &qr.Out_freq, &qr.Load_va,
 			&qr.Load_watt, &qr.Load_percent, &qr.Bus_voltage, &qr.Batt_voltage,
@@ -195,7 +195,7 @@ func responseParser(cmd *string, response *string, qr *QueryResponse) {
 		if err != nil {
 			fmt.Printf("Error parsing QPIGS into struct: %s\n", err)
 		}
-	} else if *cmd == "QPIRI" {
+	} else if cmd == "QPIRI" {
 		_, err := fmt.Sscanf(*response, "%f %f %f %f %f %d %d %f %f %f %f %f %d %d %d %d %d %d - %d %d %d %f",
 			&qr.Grid_voltage_rating, &qr.Grid_current_rating, &qr.Out_voltage_rating, &qr.Out_freq_rating,
 			&qr.Out_current_rating, &qr.Out_va_rating, &qr.Out_watt_rating, &qr.Batt_rating, &qr.Batt_recharge_voltage,
