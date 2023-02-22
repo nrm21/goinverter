@@ -138,11 +138,11 @@ func writeToInverter(dev *hid.DeviceInfo, cmdToWrite *string) (string, int) {
 
 		readBuffer := make([]byte, 8)
 		response = []byte{}
-		timeoutMillisecs := 2000
+		timeoutMillisecs := 500
 
-		// Exit the next for loop a few seconds into the future (if we havent
-		// already) since it means something went wrong reading the value
-		funcExpireTime := time.Now().Unix() + 10
+		// Exit the next for loop (if we havent already) a few seconds into
+		// the future since it means something went wrong reading the value
+		funcExpireTime := time.Now().Unix() + 7
 
 		for time.Now().Unix() < funcExpireTime {
 			bytesRead, err := conn.ReadTimeout(readBuffer, timeoutMillisecs)
@@ -161,7 +161,7 @@ func writeToInverter(dev *hid.DeviceInfo, cmdToWrite *string) (string, int) {
 				// Instantly reading the next buffer seems to sometimes cause issues, perhaps the
 				// USB bus cannot keep up, also taking too long between reads seems to confuse as
 				// well.  After some trial and error a slight delay between reads seems to work best
-				time.Sleep(75 * time.Millisecond)
+				time.Sleep(50 * time.Millisecond)
 			}
 		}
 		if debug {

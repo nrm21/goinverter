@@ -15,10 +15,13 @@ import (
 )
 
 var web2usbPipe chan string
+var usbResponse string
 var debug bool
+var lastUsbUpdate int64
 
 const httpIp = "" // leave blank for 0.0.0.0, else use a specific interface or localhost for more security
 const httpPort = "8088"
+const usbUpdateInterval int64 = 15
 
 // Make it possible to kill program by typing ctrl-C
 func SetupCloseHandler() {
@@ -57,29 +60,43 @@ func handleHttpStatus(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "status: \"ok\"\n")
 }
 
+// Sends QPIGS then QPIRI to the USB and returns the result of both
+func doStatusUpdate() string {
+	qr := &QueryResponse{}
+
+	cmd := "QPIGS"
+	web2usbPipe <- cmd
+	usbResponse = <-web2usbPipe
+	responseParser(cmd, &usbResponse, qr)
+
+	cmd = "QPIRI"
+	web2usbPipe <- cmd
+	usbResponse = <-web2usbPipe
+	responseParser(cmd, &usbResponse, qr)
+
+	// turn response into JSON and stringify it
+	jsonStruct, _ := json.Marshal(qr)
+
+	return string(jsonStruct)
+}
+
 // Handle http to run raw commands
 func handleHttpRaw(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if strings.Contains(r.URL.Path, "query") {
-		qr := &QueryResponse{}
+		if lastUsbUpdate+usbUpdateInterval < time.Now().Unix() {
+			usbResponse = doStatusUpdate()
+			//fmt.Fprintf(w, "%s\n", PrettyString(response)) // pretty print for webpage display
+			fmt.Fprintf(w, "%s\n", usbResponse)
 
-		cmd := "QPIGS"
-		web2usbPipe <- cmd
-		response := <-web2usbPipe
-		responseParser(cmd, &response, qr)
-
-		cmd = "QPIRI"
-		web2usbPipe <- cmd
-		response = <-web2usbPipe
-		responseParser(cmd, &response, qr)
-
-		// turn response into JSON and stringify it
-		jsonStruct, _ := json.Marshal(qr)
-		response = string(jsonStruct)
-
-		// now indent the json into pretty print for webpage display
-		fmt.Fprintf(w, "%s\n", PrettyString(response))
+			lastUsbUpdate = time.Now().Unix()
+		} else { // we are querying again before the update interval expires, just return the previous data
+			if debug {
+				fmt.Println("Update interval not yet expired... resending previous data")
+			}
+			fmt.Fprintf(w, "%s\n", usbResponse)
+		}
 	} else if strings.Contains(r.URL.Path, "raw") {
 		// run command and send response to web
 		query := r.URL.Query()
@@ -88,6 +105,7 @@ func handleHttpRaw(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// runs in a loop handling any misreads and doing them over again as needed
 func handleUSBTraffic() {
 	var devices []hid.DeviceInfo
 	devices = hid.Enumerate(0, 0)
@@ -104,7 +122,7 @@ func handleUSBTraffic() {
 			for bytesRead < 104 {
 				response, bytesRead = writeToInverter(&inverterDev, &cmd)
 				if debug && bytesRead < 104 {
-					fmt.Printf("Less than 104 byte response... resending command to inverter\n")
+					fmt.Println("Less than 104 byte response... resending command to inverter")
 					time.Sleep(2500 * time.Millisecond)
 				}
 			}
