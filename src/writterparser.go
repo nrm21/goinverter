@@ -173,7 +173,7 @@ func writeToInverter(dev *hid.DeviceInfo, cmdToWrite *string) (string, int) {
 		endPos := locationAt(response, 0x0d)
 		//fmt.Printf("Startpos: %d    Endpos: %d\n", startPos, endPos)
 
-		if startPos == 0 && endPos > 0 {
+		if startPos < 10 && endPos > 0 {
 			truncatedResponse = string(response[(startPos + 1):(endPos - 2)])
 			if debug {
 				fmt.Printf("%s\n", truncatedResponse)
