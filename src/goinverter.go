@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"net/http"
 	"os"
@@ -187,5 +188,5 @@ func main() {
 	go handleUSBTraffic()
 
 	fmt.Println("Server started at port " + httpPort)
-	http.ListenAndServe(":"+httpPort, nil)
+	log.Fatal(http.ListenAndServe(":"+httpPort, nil))
 }
