@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,12 +16,10 @@ import (
 	"github.com/bearsh/hid"
 )
 
-var usbResponse string
 var debug bool
 var lastUsbUpdate, usbUpdateInterval int64
-
-const httpIp = "" // leave blank for 0.0.0.0, else use a specific interface or localhost for more security
-const httpPort = "8088"
+var lastQuery *QueryResponse
+var measurementName, httpPort string
 
 // Make it possible to kill program by typing ctrl-C
 func SetupCloseHandler() {
@@ -37,17 +36,22 @@ func SetupCloseHandler() {
 func checkArgs() bool {
 	if len(os.Args) > 1 { // if we have arguments parse them
 		arguments := os.Args
+		fmt.Printf("Arguments: %s", arguments[0])
+
 		for i := 0; i < len(arguments); i++ {
-			if arguments[i] == "-d" {
+			if arguments[i] == "-d" { // [debug]
 				fmt.Println("Debug flag set")
 				debug = true
-			} else if arguments[i] == "-i" {
+			} else if arguments[i] == "-i" { // [interval <time>]
 				i++
 				updateTime, err := strconv.Atoi(arguments[i])
 				usbUpdateInterval = int64(updateTime)
 				if err != nil {
 					fmt.Println("Error with interval argument parameter, check if it is a number")
 				}
+			} else if arguments[i] == "-p" { // [port <portnum>]
+				i++
+				httpPort = arguments[i]
 			}
 		}
 	}
@@ -74,12 +78,17 @@ func handleHttpRaw(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if strings.Contains(r.URL.Path, "query") {
-		fmt.Fprintf(w, "%s\n", PrettyString(usbResponse)) // pretty print for webpage display
-		//fmt.Fprintf(w, "%s\n", usbResponse)
+		// add to the struct the last time we updated in seconds
+		lastUpdatedSecsAgo := time.Now().Unix() - lastUsbUpdate
+		lastQuery.LastUpdated = lastUpdatedSecsAgo
+
+		// turn response into JSON and pretty print for webpage display
+		jsonStruct, _ := json.Marshal(lastQuery)
+		fmt.Fprintf(w, "%s\n", PrettyString(string(jsonStruct)))
 	} else if strings.Contains(r.URL.Path, "raw") {
 		// run command and send response to web
-		query := r.URL.Query()
-		rawResponse := sendToInverterAndRetry(query.Get("cmd"))
+		lastQuery := r.URL.Query()
+		rawResponse := sendToInverterAndRetry(lastQuery.Get("cmd"))
 		fmt.Fprintf(w, "%s\n", rawResponse) // and send response to console also
 	}
 }
@@ -87,21 +96,30 @@ func handleHttpRaw(w http.ResponseWriter, r *http.Request) {
 // Send command to inverter and retry if response was not correct
 func sendToInverterAndRetry(cmd string) string {
 	var response string
-	devices := hid.Enumerate(0, 0)
-	inverterDev := &devices[0] // the first device will usually be the one we want
+	devices := hid.Enumerate(1637, 20833) // this is the vendor and product id of my inverter
+	inverterDev := &devices[0]            // the first device will usually be the one we want
 
-	if cmd == "QPIRI" || cmd == "QPIGS" {
+	if cmd == "QMOD" {
+		var bytesRead int
+		for bytesRead != 8 {
+			response, bytesRead = writeToInverter(inverterDev, &cmd)
+			if bytesRead != 8 {
+				fmt.Println("Not an 8 byte response... resending command to inverter")
+				time.Sleep(2000 * time.Millisecond)
+			}
+		}
+	} else if cmd == "QPIRI" || cmd == "QPIGS" {
 		var bytesRead int
 		for bytesRead < 104 {
 			response, bytesRead = writeToInverter(inverterDev, &cmd)
-			if debug && bytesRead < 104 {
+			if bytesRead < 104 {
 				fmt.Println("Less than 104 byte response... resending command to inverter")
-				time.Sleep(2500 * time.Millisecond)
+				time.Sleep(2000 * time.Millisecond)
 			}
 		}
 	} else { // else this isn't a query that returns a long response
 		response, _ = writeToInverter(inverterDev, &cmd)
-		//response = fmt.Sprintf("{\"msg\": \"%s\"}", response) // JSON-ify
+		//response = fmt.Sprintf("{\"msg\": \"%s\"}", response) // send to web as JSON
 	}
 
 	return response
@@ -109,20 +127,30 @@ func sendToInverterAndRetry(cmd string) string {
 
 // Sends QPIGS then QPIRI to the USB and returns the result of both
 func doStatusUpdate() {
-	qr := &QueryResponse{}
+	newQuery := &QueryResponse{}
 
-	cmd := "QPIGS"
-	response := sendToInverterAndRetry(cmd)
-	responseParser(cmd, &response, qr)
+	cmds := strings.Split("QMOD|QPIGS|QPIRI", "|")
+	for _, cmd := range cmds {
+		responseParser(cmd, sendToInverterAndRetry(cmd), newQuery)
+	}
+	newQuery.PV_in_watts = newQuery.SCC_voltage * newQuery.PV_in_current
+	newQuery.PV_in_watthour = newQuery.PV_in_watts / (3600 / float64(usbUpdateInterval))
+	newQuery.PV_in_watthour = math.Round(newQuery.PV_in_watthour*100) / 100 // 2 digit round
+	// only if in battery mode do we want to calculate, otherwise leave at 0
+	if newQuery.Inverter_mode_str == "B" {
+		newQuery.Load_watthour = newQuery.Load_watts / (3600 / float64(usbUpdateInterval))
+		newQuery.Load_watthour = math.Round(newQuery.Load_watthour*100) / 100 // 2 digit round
+	}
 
-	cmd = "QPIRI"
-	response = sendToInverterAndRetry(cmd)
-	responseParser(cmd, &response, qr)
+	// sets the measurement name (only matters for InfluxDB)
+	newQuery.Measurement = measurementName
 
-	// turn response into JSON and stringify it
-	jsonStruct, _ := json.Marshal(qr)
+	// Rather than access the global var directly, lets leave the previous data there
+	// and only overwrite it once we have all the data we need from our queries to the
+	// USB device which can take some time.  This way the user never sees a lapse in data
+	// when going to the webpage.
+	lastQuery = newQuery
 
-	usbResponse = string(jsonStruct)
 	if debug {
 		fmt.Println("Status update complete\n")
 	}
@@ -143,8 +171,10 @@ func handleUSBTraffic() {
 }
 
 func main() {
-	// set defaults incase not set by program
-	usbUpdateInterval = 10
+	// set global var defaults in case not set by program parameters
+	usbUpdateInterval = 12
+	httpPort = "8088"
+	measurementName = "exec_solar"
 
 	SetupCloseHandler()
 	checkArgs()
@@ -157,5 +187,5 @@ func main() {
 	go handleUSBTraffic()
 
 	fmt.Println("Server started at port " + httpPort)
-	http.ListenAndServe(httpIp+":"+httpPort, nil)
+	http.ListenAndServe(":"+httpPort, nil)
 }

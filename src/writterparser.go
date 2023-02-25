@@ -9,48 +9,42 @@ import (
 )
 
 type QueryResponse struct {
+	// QMOD
+	Inverter_mode_str string
+
 	// QPIGS
-	Grid_voltage           float32
-	Grid_freq              float32
-	Out_voltage            float32
-	Out_freq               float32
-	Load_va                int32
-	Load_watt              int32
-	Load_percent           int32
-	Bus_voltage            int32
-	Batt_voltage           float32
-	Batt_charge_current    int32
-	Batt_capacity          int32
-	Temp_heatsink          int32
-	Pv_input_current       int32
-	Pv_input_voltage       float32
-	Scc_voltage            float32
-	Batt_discharge_current int32
-	Device_status          string
+	AC_grid_voltage           float64
+	AC_out_voltage            float64
+	PV_in_voltage             float64
+	PV_in_current             float64
+	PV_in_watts               float64
+	PV_in_watthour            float64
+	SCC_voltage               float64
+	Load_pct                  int64
+	Load_watts                float64
+	Load_watthour             float64
+	Load_va                   int64
+	Bus_voltage               int64
+	Heatsink_temperature      int64
+	Battery_capacity          int64
+	Battery_voltage           float64
+	Battery_charge_current    int64
+	Battery_discharge_current int64
+	Device_status             string
 
 	// QPIRI
-	Grid_voltage_rating      float32
-	Grid_current_rating      float32
-	Out_voltage_rating       float32
-	Out_freq_rating          float32
-	Out_current_rating       float32
-	Out_va_rating            int32
-	Out_watt_rating          int32
-	Batt_rating              float32
-	Batt_recharge_voltage    float32
-	Batt_under_voltage       float32
-	Batt_bulk_voltage        float32
-	Batt_float_voltage       float32
-	Batt_type                int32
-	Max_grid_charge_current  int32
-	Max_charge_current       int32
-	In_voltage_range         int32
-	Out_source_priority      int32
-	Charger_source_priority  int32
-	Machine_type             int32
-	Topology                 int32
-	Out_mode                 int32
-	Batt_redischarge_voltage float32
+	Battery_recharge_voltage    float64
+	Battery_under_voltage       float64
+	Battery_bulk_voltage        float64
+	Battery_float_voltage       float64
+	Max_grid_charge_current     int64
+	Max_charge_current          int64
+	Out_source_priority         int64
+	Charger_source_priority     int64
+	Battery_redischarge_voltage float64
+
+	Measurement string
+	LastUpdated int64
 }
 
 // Find if a byte exists in an array of bytes and return it's location, if it can't be found then return -1
@@ -185,23 +179,31 @@ func writeToInverter(dev *hid.DeviceInfo, cmdToWrite *string) (string, int) {
 }
 
 // Take the response string and seperated them into fields
-func responseParser(cmd string, response *string, qr *QueryResponse) {
-	if cmd == "QPIGS" {
-		_, err := fmt.Sscanf(*response, "%f %f %f %f %d %d %d %d %f %d %d %d %d %f %f %d %s",
-			&qr.Grid_voltage, &qr.Grid_freq, &qr.Out_voltage, &qr.Out_freq, &qr.Load_va,
-			&qr.Load_watt, &qr.Load_percent, &qr.Bus_voltage, &qr.Batt_voltage,
-			&qr.Batt_charge_current, &qr.Batt_capacity, &qr.Temp_heatsink, &qr.Pv_input_current,
-			&qr.Pv_input_voltage, &qr.Scc_voltage, &qr.Batt_discharge_current, &qr.Device_status)
+func responseParser(cmd string, response string, qr *QueryResponse) {
+	var _ignoreVarI int64   // placeholder for vars we want to throw away
+	var _ignoreVarF float64 // placeholder for vars we want to throw away
+
+	if cmd == "QMOD" {
+		_, err := fmt.Sscanf(response, "%s", &qr.Inverter_mode_str)
+		if err != nil {
+			fmt.Printf("Error parsing QMOD into struct: %s\n", err)
+		}
+	} else if cmd == "QPIGS" {
+		_, err := fmt.Sscanf(response, "%f %f %f %f %d %f %d %d %f %d %d %d %f %f %f %d %s",
+			&qr.AC_grid_voltage, &_ignoreVarF, &qr.AC_out_voltage, &_ignoreVarF, &qr.Load_va,
+			&qr.Load_watts, &qr.Load_pct, &qr.Bus_voltage, &qr.Battery_voltage, &qr.Battery_charge_current,
+			&qr.Battery_capacity, &qr.Heatsink_temperature, &qr.PV_in_current, &qr.PV_in_voltage,
+			&qr.SCC_voltage, &qr.Battery_discharge_current, &qr.Device_status)
 		if err != nil {
 			fmt.Printf("Error parsing QPIGS into struct: %s\n", err)
 		}
 	} else if cmd == "QPIRI" {
-		_, err := fmt.Sscanf(*response, "%f %f %f %f %f %d %d %f %f %f %f %f %d %d %d %d %d %d - %d %d %d %f",
-			&qr.Grid_voltage_rating, &qr.Grid_current_rating, &qr.Out_voltage_rating, &qr.Out_freq_rating,
-			&qr.Out_current_rating, &qr.Out_va_rating, &qr.Out_watt_rating, &qr.Batt_rating, &qr.Batt_recharge_voltage,
-			&qr.Batt_under_voltage, &qr.Batt_bulk_voltage, &qr.Batt_float_voltage, &qr.Batt_type,
-			&qr.Max_grid_charge_current, &qr.Max_charge_current, &qr.In_voltage_range, &qr.Out_source_priority,
-			&qr.Charger_source_priority, &qr.Machine_type, &qr.Topology, &qr.Out_mode, &qr.Batt_redischarge_voltage)
+		_, err := fmt.Sscanf(response, "%f %f %f %f %f %d %d %f %f %f %f %f %d %d %d %d %d %d - %d %d %d %f",
+			&_ignoreVarF, &_ignoreVarF, &_ignoreVarF, &_ignoreVarF, &_ignoreVarF, &_ignoreVarI, &_ignoreVarI,
+			&_ignoreVarF, &qr.Battery_recharge_voltage, &qr.Battery_under_voltage, &qr.Battery_bulk_voltage,
+			&qr.Battery_float_voltage, &_ignoreVarI, &qr.Max_grid_charge_current, &qr.Max_charge_current,
+			&_ignoreVarI, &qr.Out_source_priority, &qr.Charger_source_priority, &_ignoreVarI, &_ignoreVarI,
+			&_ignoreVarI, &qr.Battery_redischarge_voltage)
 		if err != nil {
 			fmt.Printf("Error parsing QPIRI into struct: %s\n", err)
 		}
