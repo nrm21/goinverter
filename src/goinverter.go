@@ -33,27 +33,22 @@ func SetupCloseHandler() {
 	}()
 }
 
-// Checks for arguments to teh program on start
-func checkArgs() bool {
-	if len(os.Args) > 1 { // if we have arguments parse them
-		arguments := os.Args
-		fmt.Printf("Arguments: %s", arguments[0])
-
-		for i := 0; i < len(arguments); i++ {
-			if arguments[i] == "-d" { // [debug]
-				fmt.Println("Debug flag set")
-				debug = true
-			} else if arguments[i] == "-i" { // [interval <time>]
-				i++
-				updateTime, err := strconv.Atoi(arguments[i])
-				usbUpdateInterval = int64(updateTime)
-				if err != nil {
-					fmt.Println("Error with interval argument parameter, check if it is a number")
-				}
-			} else if arguments[i] == "-p" { // [port <portnum>]
-				i++
-				httpPort = arguments[i]
+// Checks for arguments to the program on start
+func CheckArgs(arguments []string) bool {
+	for i := 0; i < len(arguments); i++ {
+		if arguments[i] == "-d" { // [debug]
+			fmt.Println("Debug flag set")
+			debug = true
+		} else if arguments[i] == "-i" { // [interval <time>]
+			i++
+			updateTime, err := strconv.Atoi(arguments[i])
+			usbUpdateInterval = int64(updateTime)
+			if err != nil {
+				fmt.Println("Error with interval argument parameter, check if it is a number")
 			}
+		} else if arguments[i] == "-p" { // [port <portnum>]
+			i++
+			httpPort = arguments[i]
 		}
 	}
 	return false
@@ -153,7 +148,7 @@ func doStatusUpdate() {
 	lastQuery = newQuery
 
 	if debug {
-		fmt.Println("Status update complete\n")
+		fmt.Println("Status update complete")
 	}
 }
 
@@ -175,10 +170,12 @@ func main() {
 	// set global var defaults in case not set by program parameters
 	usbUpdateInterval = 12
 	httpPort = "8088"
-	measurementName = "exec_solar"
+	measurementName = "exec_solar" // override the measurement name (for InfluxDB backend)
 
 	SetupCloseHandler()
-	checkArgs()
+	if len(os.Args) > 1 { // if we have arguments parse them
+		CheckArgs(os.Args)
+	}
 
 	http.HandleFunc("/status", handleHttpStatus) // health check (for k8s readiness probes)
 	http.HandleFunc("/health", handleHttpStatus) // health check (for k8s readiness probes)
