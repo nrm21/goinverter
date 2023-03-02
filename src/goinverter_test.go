@@ -3,8 +3,8 @@ package main
 import "testing"
 
 func TestCheckArgs(t *testing.T) {
-	CheckArgs([]string{"-d", "-i", "5", "-p", "8080"})
-	// CheckArgs([]string{"-d", "-i", "5"})
+	CheckArgs([]string{"-i", "5", "-d", "-p", "8080"})
+	// CheckArgs([]string{"-i", "-d", "5"})
 
 	if debug != true {
 		t.Fatalf("Got: %t, Expected true", debug)
