@@ -47,7 +47,8 @@ type QueryResponse struct {
 	LastUpdated int64
 }
 
-// Find if a byte exists in an array of bytes and return it's location, if it can't be found then return -1
+// Find the first instance of a byte if it exists in an array of bytes
+// and return it's location, if it can't be found then return -1
 func locationAt(arr []byte, b byte) int {
 	for i, v := range arr {
 		if v == b {
