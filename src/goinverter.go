@@ -18,7 +18,7 @@ import (
 )
 
 var debug bool
-var lastUsbUpdate, usbUpdateInterval int64
+var lastUsbUpdate, usbUpdateInterval, batteryChargeShift, batteryDischargeShift int64
 var lastQuery *QueryResponse
 var measurementName, httpPort string
 
@@ -132,10 +132,18 @@ func doStatusUpdate() {
 	newQuery.PV_in_watts = newQuery.SCC_voltage * newQuery.PV_in_current
 	newQuery.PV_in_watthour = newQuery.PV_in_watts / (3600 / float64(usbUpdateInterval))
 	newQuery.PV_in_watthour = math.Round(newQuery.PV_in_watthour*100) / 100 // 2 digit round
+
 	// only if in battery mode do we want to calculate, otherwise leave at 0
 	if newQuery.Inverter_mode_str == "B" {
 		newQuery.Load_watthour = newQuery.Load_watts / (3600 / float64(usbUpdateInterval))
 		newQuery.Load_watthour = math.Round(newQuery.Load_watthour*100) / 100 // 2 digit round
+	}
+
+	// shift battery current up/down by this since the inverter lies to us slightly about actual draw
+	if newQuery.Battery_charge_current > 1 {
+		newQuery.Battery_charge_current += batteryChargeShift
+	} else if newQuery.Battery_discharge_current > 1 {
+		newQuery.Battery_discharge_current += batteryDischargeShift
 	}
 
 	// sets the measurement name (only matters for InfluxDB)
@@ -171,6 +179,8 @@ func main() {
 	usbUpdateInterval = 12
 	httpPort = "8088"
 	measurementName = "exec_solar" // override the measurement name (for InfluxDB backend)
+	batteryChargeShift = 0
+	batteryDischargeShift = 1
 
 	SetupCloseHandler()
 	if len(os.Args) > 1 { // if we have arguments parse them
